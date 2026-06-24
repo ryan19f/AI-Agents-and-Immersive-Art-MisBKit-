@@ -53,19 +53,19 @@ git clone https://github.com/ryan19f/AI-Agents-and-Immersive-Art-MisBKit.git
 - Real-time media systems
 - Experimental storytelling
 
-## Author
+## Authors
 
-**Ryan Fernandes**  
+### Ryan Fernandes
 M.S. Robotics and Artificial Intelligence  
 Arizona State University
-**Alex Lee**  
-Associate Professor of Animation  
-School of Art, Arizona State University  
+
+### Alex Lee
+Associate Professor of Animation, School of Art  
 Animation Coordinator & Co-director  
-Affiliate Faculty, Mesa City Immersive eXperience Center
+Affiliate Faculty, Mesa City Immersive eXperience Center  
+Arizona State University  
 
 Website: https://alexmlee.com
-
 ## License
 
 MIT License
