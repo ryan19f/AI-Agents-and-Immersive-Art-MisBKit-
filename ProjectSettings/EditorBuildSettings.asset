@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1045 &1
+EditorBuildSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/theGreatBuddha.unity
+    guid: 0bcbb2fd2933f1d46b02b16a46362f7a
+  - enabled: 1
+    path: Assets/Scenes/thePocketPuzzles.unity
+    guid: db567f4b5bc7f8543a7a1c755507aa89
+  - enabled: 1
+    path: Assets/ML-Agents/Examples/Crawler/Scenes/CrawlerDynamicTarget.unity
+    guid: cb09636e2bfd74254939fe22b12c28e1
+  - enabled: 1
+    path: Assets/ML-Agents/Examples/WallJump/Scenes/WallJump.unity
+    guid: 56024e8d040d344709949bc88128944d
+  - enabled: 1
+    path: Assets/ML-Agents/Examples/Walker/Scenes/Walker.unity
+    guid: 36160dc1faf384eaa9a65a73f6942ce3
+  - enabled: 1
+    path: Assets/Scenes/theAscention.unity
+    guid: f01bb82e0cdae3f43b6d5f17d4f5c9f9
+  - enabled: 1
+    path: Assets/Scenes/Neolibus.unity
+    guid: a3673c5aa5ebecb438637fcfaf83c14c
+  - enabled: 1
+    path: Assets/HydroForm/Demos/storm.unity
+    guid: a561a7b1d6e029f479b71ef82e0152bb
+  - enabled: 0
+    path: Assets/Scenes/Zhuangzi.unity
+    guid: 53c1e4be3483a4645a02288a55fe056d
+  - enabled: 0
+    path: Assets/Scenes/OSCTest.unity
+    guid: fcc9b7e3c4130c448b89393f39c2471e
+  - enabled: 0
+    path: Assets/Scenes/Reshape.unity
+    guid: bcef87219caa079469695a69821a6838
+  - enabled: 1
+    path: Assets/Scenes/theBalancers.unity
+    guid: 215e8971a6bbef444bac5afe45bc841c
+  - enabled: 0
+    path: Assets/ML-Agents/Examples/Basic/Scenes/Basic.unity
+    guid: cf1d119a8748d406e90ecb623b45f92f
+  - enabled: 0
+    path: Assets/ML-Agents/Examples/Worm/Scenes/WormDynamicTarget.unity
+    guid: 2d569bb9615d8480f82ec9eab5fb4cf2
+  m_configObjects: {}
