@@ -59,6 +59,8 @@ git clone https://github.com/ryan19f/AI-Agents-and-Immersive-Art-MisBKit.git
 M.S. Robotics and Artificial Intelligence  
 Arizona State University
 
+Website:https://ryan-fernandes-82900364.figma.site
+
 ### Alex Lee
 Associate Professor of Animation, School of Art  
 Animation Coordinator & Co-director  
