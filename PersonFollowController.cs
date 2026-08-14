@@ -5,7 +5,7 @@ public class PersonFollowController : MonoBehaviour
     [Header("Gait reference")]
     [SerializeField] private QuadrupedGait gait;
 
-    [Header("Target input (will come from Pi later)")]
+    [Header("Target input (from Pi)")]
     [Range(-1f, 1f)] public float targetXOffset = 0f;
     [Range(0f, 1f)] public float targetDistance = 0.5f;
     public bool personVisible = false;
@@ -19,11 +19,17 @@ public class PersonFollowController : MonoBehaviour
 
     [Header("Search behavior")]
     [SerializeField] private bool searchWhenLost = true;
-    [SerializeField] private float timeBeforeSearch = 2f;     // seconds with nothing detected before searching
-    [SerializeField] private float searchTurnSpeed = 0.2f;    // gentle constant turn while searching
-    [SerializeField] private float searchForwardSpeed = 0f;   // 0 = turn in place, >0 = wander forward while turning
+    [SerializeField] private float timeBeforeSearch = 2f;
+    [SerializeField] private float searchTurnSpeed = 0.2f;
+    [SerializeField] private float searchForwardSpeed = 0f;
+    // NEW:
+    [SerializeField] private float searchTurnDuration = 1.5f;
+    [SerializeField] private float searchPauseDuration = 1.5f;
 
     private float timeSinceLastDetection = 0f;
+    private float searchStateTimer = 0f;
+    private bool searchIsPaused = false;
+    private bool sweepingRight = true;
 
     private void Update()
     {
@@ -35,21 +41,19 @@ public class PersonFollowController : MonoBehaviour
 
             if (searchWhenLost && timeSinceLastDetection > timeBeforeSearch)
             {
-                // Nothing detected for a while - rotate slowly to scan the area
-                gait.SetSteering(searchTurnSpeed, searchForwardSpeed);
-                gait.SetWalking(true);
+                RunSearchSweep();
             }
             else
             {
-                // Brief gap in detection - just pause, don't spin yet
                 gait.SetWalking(false);
             }
 
             return;
         }
-
-        // Person/movement detected - reset the search timer
+        // NEW:
         timeSinceLastDetection = 0f;
+        searchStateTimer = 0f;
+        searchIsPaused = false;
 
         float turn = 0f;
         if (Mathf.Abs(targetXOffset) > deadZoneOffset)
@@ -65,5 +69,34 @@ public class PersonFollowController : MonoBehaviour
 
         gait.SetSteering(turn, forward);
         gait.SetWalking(forward > 0f || Mathf.Abs(turn) > 0f);
+    }
+
+    private void RunSearchSweep()
+    {
+        searchStateTimer += Time.deltaTime;
+
+        if (searchIsPaused)
+        {
+            gait.SetWalking(false);
+
+            if (searchStateTimer > searchPauseDuration)
+            {
+                searchStateTimer = 0f;
+                searchIsPaused = false;
+                sweepingRight = !sweepingRight;
+            }
+        }
+        else
+        {
+            float turn = sweepingRight ? searchTurnSpeed : -searchTurnSpeed;
+            gait.SetSteering(turn, searchForwardSpeed);
+            gait.SetWalking(true);
+
+            if (searchStateTimer > searchTurnDuration)
+            {
+                searchStateTimer = 0f;
+                searchIsPaused = true;
+            }
+        }
     }
 }
