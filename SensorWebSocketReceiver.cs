@@ -8,48 +8,36 @@ using System.Threading.Tasks;
 public class SensorWebSocketReceiver : MonoBehaviour
 {
     [Header("WebSocket Settings")]
-    [SerializeField] private string serverUri = "ws://192.168.1.100:81";
+    [SerializeField] private string serverUri = "ws://192.168.0.125/ws";
     [SerializeField] private bool connectOnStart = true;
+    [SerializeField] private float pollIntervalMs = 50f;
 
-    [Header("Target Controller & Motion Settings")]
+    [Header("Port Settings")]
+    [Tooltip("Target Port ID (0 matches portC in config)")]
+    [SerializeField] private int sensorPortId = 0;
+
+    [Header("Target Controller")]
     [SerializeField] private PersonFollowController followController;
     [SerializeField] private Transform targetTransform;
-    [SerializeField] private float smoothSpeed = 10f;
 
-    [Header("Debug - Last Received Values")]
-    [SerializeField] private bool debugLastVisible;
-    [SerializeField] private float debugLastXOffset;
+    [Header("Debug Live Readout")]
     [SerializeField] private float debugLastDistance;
-    [SerializeField] private Vector3 debugLastEuler;
-    [SerializeField] private float secondsSinceLastPacket;
+    [SerializeField] private bool debugLastVisible;
 
-    // Background Thread / Socket Control
     private ClientWebSocket webSocket;
     private CancellationTokenSource cts;
     private Thread receiveThread;
     private volatile bool running;
 
-    // Shared thread-safe state between background thread and main thread
     private readonly object lockObj = new object();
-    private bool pendingVisible;
-    private float pendingXOffset;
     private float pendingDistance;
-    private Quaternion pendingRotation = Quaternion.identity;
-    private Vector3 pendingPosition = Vector3.zero;
+    private bool pendingVisible;
     private bool hasNewData;
-    private float lastPacketTimestamp;
 
     private void Start()
     {
-        if (targetTransform == null)
-        {
-            targetTransform = this.transform;
-        }
-
-        if (connectOnStart)
-        {
-            StartWebSocketConnection();
-        }
+        if (targetTransform == null) targetTransform = this.transform;
+        if (connectOnStart) StartWebSocketConnection();
     }
 
     public void StartWebSocketConnection()
@@ -58,105 +46,122 @@ public class SensorWebSocketReceiver : MonoBehaviour
 
         running = true;
         cts = new CancellationTokenSource();
-        
-        // Run WebSocket loop on background thread to keep Unity's main thread smooth
-        receiveThread = new Thread(async () => await ReceiveLoopAsync(cts.Token))
-        {
-            IsBackground = true
-        };
+        receiveThread = new Thread(async () => await SocketLifecycleLoopAsync(cts.Token)) { IsBackground = true };
         receiveThread.Start();
+    }
 
-        Debug.Log($"[SensorWS] Connecting to WebSocket at {serverUri}...");
+    private async Task SocketLifecycleLoopAsync(CancellationToken token)
+    {
+        webSocket = new ClientWebSocket();
+        try
+        {
+            await webSocket.ConnectAsync(new Uri(serverUri), token);
+            Debug.LogWarning($"<color=cyan>[SensorWS] Successfully Connected to: {serverUri}</color>");
+
+            await Task.Delay(200, token);
+
+            // Configure Port 0 for generic sensor input
+            string enablePortCmd = $"{{\"cmd\":0,\"val\":{{\"ports\":[{{\"id\":{sensorPortId},\"units\":[{{\"model\":\"sensor_generic\",\"enabled\":true,\"alpha\":0.5}}]}}]}}}}";
+            await SendStringAsync(enablePortCmd, token);
+
+            var receiveTask = ReceiveLoopAsync(token);
+            var pollTask = PollLoopAsync(token);
+
+            await Task.WhenAll(receiveTask, pollTask);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            Debug.LogError($"[SensorWS] Connection failure: {e.Message}");
+        }
+    }
+
+    private async Task SendStringAsync(string message, CancellationToken token)
+    {
+        if (webSocket != null && webSocket.State == WebSocketState.Open)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(message);
+            await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+        }
+    }
+
+    private async Task PollLoopAsync(CancellationToken token)
+    {
+        // Polling command for MisBKit telemetry (cmd 2 for live sensor data stream)
+        string pollCmd = "{\"cmd\":2}";
+
+        while (running && webSocket.State == WebSocketState.Open && !token.IsCancellationRequested)
+        {
+            try
+            {
+                await SendStringAsync(pollCmd, token);
+            }
+            catch { break; }
+
+            await Task.Delay((int)pollIntervalMs, token);
+        }
     }
 
     private async Task ReceiveLoopAsync(CancellationToken token)
     {
-        webSocket = new ClientWebSocket();
-
-        try
+        byte[] buffer = new byte[8192];
+        while (running && webSocket.State == WebSocketState.Open && !token.IsCancellationRequested)
         {
-            Uri uri = new Uri(serverUri);
-            await webSocket.ConnectAsync(uri, token);
-            Debug.Log("[SensorWS] Connected successfully!");
-
-            byte[] buffer = new byte[8192];
-
-            while (running && webSocket.State == WebSocketState.Open && !token.IsCancellationRequested)
+            var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+            if (result.MessageType == WebSocketMessageType.Close)
             {
-                WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Close", token);
+                break;
+            }
 
-                if (result.MessageType == WebSocketMessageType.Close)
+            if (result.MessageType == WebSocketMessageType.Text)
+            {
+                string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                
+                // Direct Diagnostic Log (Filters out repetitive configuration & position replies)
+                if (!json.Contains("\"sensorconfig\"") && 
+                    !json.Contains("\"rc_config\"") && 
+                    !json.Contains("\"pair\"") && 
+                    !json.Contains("\"positions\""))
                 {
-                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
-                    Debug.Log("[SensorWS] Server requested connection close.");
-                    break;
+                    Debug.LogWarning($"[MisBKit Live Sensor Packet]: {json}");
                 }
 
-                if (result.MessageType == WebSocketMessageType.Text)
-                {
-                    string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    ParseJsonPayload(json);
-                }
+                ParseMisBKitJson(json);
             }
         }
-        catch (OperationCanceledException)
-        {
-            // Expected on application stop or disconnect request
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning("[SensorWS] Receive error: " + e.Message);
-        }
     }
 
-    /// <summary>
-    /// Parses incoming Json outputted from SensorManager on the background thread.
-    /// Supports distance/follow offsets and 3D rotation/position.
-    /// </summary>
-    private void ParseJsonPayload(string json)
+    private void ParseMisBKitJson(string json)
     {
-        // 1. Check person / movement presence
-        bool visible = json.Contains("\"movementDetected\": true") || 
-                       json.Contains("\"movementDetected\":true") || 
-                       json.Contains("\"personVisible\": true") ||
-                       json.Contains("\"personVisible\":true");
-
-        // 2. Extract Distance & Tracking Offsets
-        float xOffset = ExtractFloat(json, "xOffset");
-        float distance = ExtractFloat(json, "distance");
-
-        // 3. Extract Motion / IMU / Rotation values (Euler or Quaternions)
-        float pitch = ExtractFloat(json, "pitch");
-        float roll = ExtractFloat(json, "roll");
-        float yaw = ExtractFloat(json, "yaw");
-
-        float qx = ExtractFloat(json, "qx");
-        float qy = ExtractFloat(json, "qy");
-        float qz = ExtractFloat(json, "qz");
-        float qw = ExtractFloat(json, "qw");
-
-        Quaternion rot = Quaternion.identity;
-        if (qw != 0 || qx != 0 || qy != 0 || qz != 0)
+        // Ignore handshake and config echoes
+        if (json.Contains("\"sensorconfig\"") || 
+            json.Contains("\"rc_config\"") || 
+            json.Contains("\"pair\"") || 
+            json.Contains("\"positions\""))
         {
-            rot = new Quaternion(qx, qy, qz, qw);
-        }
-        else if (pitch != 0 || roll != 0 || yaw != 0)
-        {
-            rot = Quaternion.Euler(pitch, yaw, roll);
+            return;
         }
 
-        // Thread-safe update of pending parameters
-        lock (lockObj)
+        // Parse distance / analog / telemetry keys
+        float distance = ExtractNumericValue(json, "distance");
+        if (distance <= 0f) distance = ExtractNumericValue(json, "dist");
+        if (distance <= 0f) distance = ExtractNumericValue(json, "data");
+        if (distance <= 0f) distance = ExtractNumericValue(json, "analog");
+
+        if (distance > 0f)
         {
-            pendingVisible = visible;
-            pendingXOffset = xOffset;
-            pendingDistance = distance;
-            pendingRotation = rot;
-            hasNewData = true;
+            bool visible = distance > 2.0f && distance < 400.0f;
+            lock (lockObj)
+            {
+                pendingDistance = distance;
+                pendingVisible = visible;
+                hasNewData = true;
+            }
         }
     }
 
-    private static float ExtractFloat(string json, string key)
+    private static float ExtractNumericValue(string json, string key)
     {
         int idx = json.IndexOf("\"" + key + "\"");
         if (idx < 0) return 0f;
@@ -165,8 +170,16 @@ public class SensorWebSocketReceiver : MonoBehaviour
         if (colonIdx < 0) return 0f;
 
         int start = colonIdx + 1;
+        while (start < json.Length && (json[start] == ' ' || json[start] == '[' || json[start] == '\"'))
+        {
+            start++;
+        }
+
+        // Avoid objects and non-numeric starts
+        if (start >= json.Length || json[start] == '{') return 0f;
+
         int end = start;
-        while (end < json.Length && json[end] != ',' && json[end] != '}' && json[end] != ']')
+        while (end < json.Length && json[end] != ',' && json[end] != '}' && json[end] != ']' && json[end] != '\"')
         {
             end++;
         }
@@ -180,86 +193,34 @@ public class SensorWebSocketReceiver : MonoBehaviour
     private void Update()
     {
         bool gotData;
+        float distance;
         bool visible;
-        float xOffset, distance;
-        Quaternion targetRot;
 
-        // Fetch thread-safe updates on the Unity main thread
         lock (lockObj)
         {
             gotData = hasNewData;
-            visible = pendingVisible;
-            xOffset = pendingXOffset;
             distance = pendingDistance;
-            targetRot = pendingRotation;
-
-            if (gotData)
-            {
-                hasNewData = false;
-                lastPacketTimestamp = Time.realtimeSinceStartup;
-            }
+            visible = pendingVisible;
+            hasNewData = false;
         }
 
-        // Update controllers if new packet was received
         if (gotData)
         {
+            debugLastVisible = visible;
+            debugLastDistance = distance;
+
             if (followController != null)
             {
                 followController.personVisible = visible;
-                followController.targetXOffset = xOffset;
                 followController.targetDistance = distance;
             }
-
-            debugLastVisible = visible;
-            debugLastXOffset = xOffset;
-            debugLastDistance = distance;
-            debugLastEuler = targetRot.eulerAngles;
         }
-
-        // Smoothly apply 3D transform rotation to target object
-        if (targetTransform != null && targetRot != Quaternion.identity)
-        {
-            targetTransform.localRotation = Quaternion.Slerp(
-                targetTransform.localRotation, 
-                targetRot, 
-                Time.deltaTime * smoothSpeed
-            );
-        }
-
-        // Calculate time passed since last packet arrived
-        secondsSinceLastPacket = Time.realtimeSinceStartup - lastPacketTimestamp;
-
-        // Safety timeout - if no message was received for 1.5 seconds, reset state
-        if (secondsSinceLastPacket > 1.5f && followController != null)
-        {
-            followController.personVisible = false;
-        }
-    }
-
-    private void OnApplicationQuit()
-    {
-        Shutdown();
     }
 
     private void OnDestroy()
     {
-        Shutdown();
-    }
-
-    private void Shutdown()
-    {
         running = false;
         cts?.Cancel();
-
-        if (webSocket != null && webSocket.State == WebSocketState.Open)
-        {
-            webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Unity Shutdown", CancellationToken.None);
-            webSocket.Dispose();
-        }
-
-        if (receiveThread != null && receiveThread.IsAlive)
-        {
-            receiveThread.Join(500);
-        }
+        webSocket?.Dispose();
     }
 }
