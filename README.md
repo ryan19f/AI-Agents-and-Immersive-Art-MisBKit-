@@ -27,8 +27,8 @@ This project investigates how AI-driven agents can interact within immersive dig
 ## Config for Primary Bot
 
 - Main Bot IP: 192.168.0.125
-- RaspberryPi IP: 192.168.0.146
-- Camera URL: http://192.168.0.146:8080/hud
+- RaspberryPi IP: 192.168.0.147
+- Camera URL: http://192.168.0.147:8080/hud
 
 ## Repository Structure
 
