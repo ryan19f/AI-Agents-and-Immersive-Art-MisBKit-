@@ -30,6 +30,12 @@ This project investigates how AI-driven agents can interact within immersive dig
 - RaspberryPi IP: 192.168.0.147
 - Camera URL: http://192.168.0.147:8080/hud
 
+## Config for Bkp Bot
+
+- Main Bot IP: 192.168.0.113
+- RaspberryPi IP: 192.168.0.214
+- Camera URL: http://192.168.0.214:8080/hud
+
 ## Repository Structure
 
 ```text
