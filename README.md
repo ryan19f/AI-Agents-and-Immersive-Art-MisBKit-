@@ -75,11 +75,12 @@ Website:https://ryan-fernandes-82900364.figma.site
 
 ### Alex Lee
 Associate Professor of Animation, School of Art  
-Animation Coordinator & Co-director  
+Animation Program Head  
 Affiliate Faculty, Mesa City Immersive eXperience Center  
 Arizona State University  
 
 Website: https://alexmlee.com
+
 ## License
 
 MIT License
